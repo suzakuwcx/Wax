@@ -12,8 +12,6 @@ export SteamGameId=322330
     part content : steamcmd.sh linux32/
   DST_SAVE_DIR : location of cluster
     content : DoNotStarveTogether/ Agreements/
-  STEAM_DIR : location of Steam root directory
-    part content : steamapps/ config/ userdata/ ...
   DST_CORE_DIR : core file of Don't Starve Together DediCated server
     part contain : mods/ bin/ data/ ...
 
@@ -21,22 +19,20 @@ export SteamGameId=322330
 "
 
 # default:
-#   STEAMCMD="${PWD}"
+#   STEAMCMD="${HOME}/.steamcmd"
 #   DST_SAVE_DIR="${HOME}/.klei"
-#   STEAM_DIR="${HOME}/.local/share/Steam"
-#   DST_CORE_DIR="${STEAM_DIR}/steamapps/common/Don't Starve Together Dedicated Server"
+#   DST_CORE_DIR="${STEAMCMD}/dst"
 
-STEAMCMD="${PWD}"
+STEAMCMD="${HOME}/.steamcmd"
 DST_SAVE_DIR="${HOME}/.klei"
-STEAM_DIR="${HOME}/.local/share/Steam"
-DST_CORE_DIR="${STEAM_DIR}/steamapps/common/Don't Starve Together Dedicated Server"
+DST_CORE_DIR="${STEAMCMD}/dst"
 
 # Server launching arguments,'-shard option has built in script'
 # See https://support.klei.com/hc/en-us/articles/360029556192-Dedicated-Server-Command-Line-Options-Guide
 LAUNCH_ARGS=(
 #     "-persistent_storage_root" <path>
 #     "-conf_dir" <path>
-      "-cluster" "Cluster_8"
+      "-cluster" "Cluster_1"
 #     "-offline"
 #     "-disabledatacollection"
 #     "-bind_ip"  <bind_ip>
@@ -50,25 +46,27 @@ LAUNCH_ARGS=(
 
 function main() {
     check_dependency 1>/dev/null
-    trap trap_ctrlc 2
+    # trap trap_ctrlc 2
     parse_options "$@"
 
 # to ensure parameters is correct, parse result is used in setting variable
-    if [[ ${PRINT_HELP} -eq 1 ]] ; then usage ; fi
-    if [[ ${CHECK_CONFIG} -eq 1 ]] ; then check_config ; fi
-    if [[ ${PRINT_SERVER_HELP} -eq 1 ]] ; then usage_server ; fi
-    if [[ ${START_SERVER} -eq 1 ]] ; then start_both_server ; fi
-    if [[ ${CLOSE_SERVER} -eq 1 ]] ; then close_server ; fi
-    if [[ ${UPDATE_SERVER} -eq 1 ]] ; then update ; fi
-    if [[ ${ROLLBACK_SERVER} -eq 1 ]] ; then rollback_server "${ROLLBACK_DAYS}" ; fi
-    if [[ ${PRINT_MOD_HELP} -eq 1 ]] ; then usage_mod ; fi
-    if [[ ${INSTAll_MOD} -eq 1 ]] ; then install_mod ${INSTAll_MOD_ARG} ; fi
-    if [[ ${LIST_MOD} -eq 1 ]] ; then get_installed_mod ; fi
-    if [[ ${REMOVE_MOD} -eq 1 ]] ; then uninstall_mod "${UNINSTAll_MOD_ID}" ; fi
-    if [[ ${SEARCH_MOD} -eq 1 ]] ; then search_mod "${SEARCH_MOD_KEYWORD}" ; fi
-    if [[ ${PRINT_CLUSTER_HELP} -eq 1 ]] ; then usage_cluster ; fi
-    if [[ ${LIST_CLUSTER} -eq 1 ]] ; then list_cluster ; fi
-    if [[ ${BACKUP_CLUSTER} -eq 1 ]] ; then backup ; fi
+    if [[ ${PRINT_HELP} -eq 1 ]] ; then usage ; exit ; fi
+    if [[ ${CHECK_CONFIG} -eq 1 ]] ; then check_config ; exit ; fi
+    if [[ ${PRINT_SERVER_HELP} -eq 1 ]] ; then usage_server ; exit ; fi
+    if [[ ${START_SERVER} -eq 1 ]] ; then start_both_server ; exit ; fi
+    if [[ ${CLOSE_SERVER} -eq 1 ]] ; then close_server ; exit ; fi
+    if [[ ${UPDATE_SERVER} -eq 1 ]] ; then update ; exit ; fi
+    if [[ ${ROLLBACK_SERVER} -eq 1 ]] ; then rollback_server "${ROLLBACK_DAYS}" ; exit ; fi
+    if [[ ${PRINT_MOD_HELP} -eq 1 ]] ; then usage_mod ; exit ; fi
+    if [[ ${INSTAll_MOD} -eq 1 ]] ; then install_mod ${INSTAll_MOD_ARG} ; exit ; fi
+    if [[ ${UPDATE_ALL_MOD} -eq 1 ]] ; then update_all_mod ; exit ; fi
+    if [[ ${LIST_MOD} -eq 1 ]] ; then get_installed_mod ; exit ; fi
+    if [[ ${REMOVE_MOD} -eq 1 ]] ; then uninstall_mod "${UNINSTAll_MOD_ID}" ; exit ; fi
+    if [[ ${SEARCH_MOD} -eq 1 ]] ; then search_mod "${SEARCH_MOD_KEYWORD}" ; exit ; fi
+    if [[ ${PRINT_CLUSTER_HELP} -eq 1 ]] ; then usage_cluster ; exit ; fi
+    if [[ ${LIST_CLUSTER} -eq 1 ]] ; then list_cluster ; exit ; fi
+    if [[ ${BACKUP_CLUSTER} -eq 1 ]] ; then backup ; exit ; fi
+    usage
 }
 
 : "
@@ -78,7 +76,6 @@ function check_dependency() {
     command -v screen || (erro "This script need screen but not be installed" && exit)
     command -v tar || (erro "This script need tar but not be installed" && exit)
     command -v grep || (erro "This script need grep but not be installed" && exit)
-    command -v sed || (erro "This script need sed but not be installed" && exit)
 }
 
 function check_config() {
@@ -86,7 +83,6 @@ function check_config() {
     if [[ ! -x "${STEAMCMD}/steamcmd.sh" ]] ; then erro "steamcmd.sh not found or not executable" ; fi
     if [[ ! -x "${STEAMCMD}/linux32/steamcmd" ]] ; then erro "steamcmd core not found or not executable" ; fi
     if [[ ! -d "${DST_SAVE_DIR}/DoNotStarveTogether/" ]] ; then erro ".klei save directory not found" ; fi
-    if [[ ! -d "${STEAM_DIR}/steamapps" ]] ; then erro "Steam directory not found " ; fi
     if [[ ! -x "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then
         erro "server core not found or not executable"
     fi
@@ -146,6 +142,9 @@ function parse_options() {
                 SEARCH_MOD=1
                 SEARCH_MOD_KEYWORD="$1"
                 ;;
+            -Mu)
+                UPDATE_ALL_MOD=1
+                ;;
 # Cluster
             -Ch)
                 PRINT_CLUSTER_HELP=1
@@ -204,8 +203,9 @@ cat << EOF
     operations:
         -Mh                    print mod help
         -Mi <mod_id>           install mod from Steam
-        -Mi <file>             install mod from local file
+        -Mi <path>             install mod from local file
         -Ml                    list installed mods
+        -Mu                    update all installed mod
         -Ms <keyword>          search mod from Steam
         -Mr <mod_id>           remove installed mod
 EOF
@@ -376,11 +376,22 @@ function rollback_server() {
 function get_installed_mod() {
     colo "GREEN" "=================================Local mod===================================="
     ls "${DST_CORE_DIR}/mods" | grep "workshop"
-    colo "GREEN" "================================Remote mod===================================="
-    colo "GREEN" "=======================dedicated_server_mods_setup.lua========================"
-#     "^\s+$|--" with -v command is to filter empty line and notes begin with '--'
-#     -B 1 option is to show mod describtion
-    grep -B 1 -Pv "^\s*$|--" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+}
+
+: "
+    "$@" mod_id
+"
+
+function download_mod_files() {
+    STEAMCMD_ARGS=("+login" "anonymous")
+
+    for element in "$@" ; do
+        STEAMCMD_ARGS=("${STEAMCMD_ARGS[@]}" "+download_item" "322330" "${element}")
+    done
+
+    STEAMCMD_ARGS=("${STEAMCMD_ARGS[@]}" "+quit")
+
+    "${STEAMCMD}/steamcmd.sh" "${STEAMCMD_ARGS[@]}" "+quit"
 }
 
 : "
@@ -400,7 +411,7 @@ function get_installed_mod() {
     1: if failed
   File:
     ${DST_CORE_DIR}/mods/workshop-${mod_id}
-    ${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua
+    ${STEAMCMD}/linux32/steamapps
 "
 
 function install_mod() {
@@ -413,8 +424,13 @@ function install_mod() {
         if [[ -n "$(echo "${MOD_NAME}" | grep -o -P "^\d+$")" ]] ; then
 # check if mod exist
             if [[ -d "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}" ]] ; then
-                erro "this mod is exist, failed"
-                return 1
+                colo "RED" "Warning: " "This mod is exist, overwrite it?(Y/n)"
+
+                if ! yes ; then
+                    colo "GREEN" "Abort"
+                fi
+
+                rm -rf "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"
             fi
 # add 'workshop-' prefix when installed
             cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"
@@ -422,50 +438,48 @@ function install_mod() {
         elif [[ -n "$(echo "${MOD_NAME}" | grep -o -P "workshop-\d+")"  ]] ; then
 # check if mod exist
             if [[ -d "${DST_CORE_DIR}/mods/${MOD_NAME}" ]] ; then
-                erro "this mod is exist, failed"
-                return 1
+                colo "RED" "Warning: " "This mod is exist, overwrite it?(Y/n)"
+
+                if ! yes ; then
+                    colo "GREEN" "Abort"
+                    return 1
+                fi
+
+                rm -rf "${DST_CORE_DIR}/mods/${MOD_NAME}"
             fi
             cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/${MOD_NAME}"
         else
-            erro "the mod name is invalid"
+            erro "Mod name is invalid"
             return 1
         fi
-        echo "install success"
+        colo "GREEN" "install success"
         return 0
     fi
 
 # the param is not a directory, try to install from Steam
 # check if the param is a pure number
-    if [[ -z "$(echo "$1" | grep -o -P "^\d+$")" ]] ; then
+    MOD_ID="$1"
+    if [[ -z "$(echo "${MOD_ID}" | grep -o -P "^\d+$")" ]] ; then
         erro "the mod id or mod name is invalid"
         return 1
     fi
 
     colo "GREEN" "install from steam"
 
-# web page example: <title>Steam Workshop::[API] Gem Core(Now with World Seeds!)</title>
-    PREFIX="		<title>Steam Workshop::"
-    SUFFIX="</title>"$'\015'
-    ERROR_TYPE="		<title>Steam Community :: Error</title>"$'\015'
+    download_mod_files "${MOD_ID}"
 
-    MOD_ID="$1"
-    MOD_NAME=""
-
-    MOD_NAME=$(curl -s "https://steamcommunity.com/sharedfiles/filedetails/?id=${MOD_ID}" \
-                    | grep "<title>")
-    if [[ ${MOD_NAME} == ${ERROR_TYPE} ]] ; then
-        erro "cannot find the mod"
+    if [[ ! -d "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${MOD_ID}/" ]] ; then 
+        erro "download fail"
         return 1
     fi
-# get mod name from web page
-    MOD_NAME=${MOD_NAME#${PREFIX}}
-    MOD_NAME=${MOD_NAME%${SUFFIX}}
-# write mod setting in dedicated_server_mods_setup.lua,example:
-# -- Smashup
-# ServerModSetup("2701285237")
-    echo "" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
-    echo "-- ${MOD_NAME}" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
-    echo "ServerModSetup(\"${MOD_ID}\")" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+
+    colo "GREEN" "download success"
+    colo "GREEN" "install mod"
+
+    cp -r "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${MOD_ID}/" "${DST_CORE_DIR}/mods/workshop-${MOD_ID}" || \
+    (erro "install fail" && exit)
+
+    rm -rf "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${MOD_ID}/"
     colo "GREEN" "install success"
     return 0
 }
@@ -490,6 +504,79 @@ function install_mod() {
   Return:
     None
 "
+
+function update_all_mod() {
+    MOD_ID=""
+    MOD_NAME=""
+    MOD_CURRENT_VERSION=""
+    MOD_REMOTE_VERSION=""
+
+    MOD_LIST=()
+    MOD_LIST_UPDATE_ID=()
+    STEAMCMD_ARGS=()
+# example 		<title>Steam Workshop::[DST] twin of terror remake</title>
+    PREFIX_NAME="		<title>Steam Workshop::"
+
+    cd "${DST_CORE_DIR}/mods"
+    MOD_LIST=($(ls | grep "workshop"))
+
+    colo "GREEN" "Checking available update, this may take some time"
+
+    for element in ${MOD_LIST[@]} ; do
+        MOD_ID=$(echo ${element} | grep -P -o '(?<=workshop-)\d+')
+        # example  v="1" version = "2.5" a="1" --> version = "2.5" --> 2.5
+        MOD_CURRENT_VERSION="$(grep -P -o 'version\s*=\s*"[^\s]+"' ${element}/modinfo.lua \
+                                | grep -P -o '[^"]+(?=")' \
+                                | cut -d $'\012' -f 2)"
+
+        RAW="$(curl -s https://steamcommunity.com/sharedfiles/filedetails/\?id=${MOD_ID})"
+
+        MOD_NAME="$(echo -e "${RAW}" | grep -P -o "(?<=${PREFIX_NAME})[^<]+")"
+        MOD_REMOTE_VERSION="$(echo -e "${RAW}" | grep -P -o "(?<=requiredtags%5B%5D=version:)[^\"]+")"
+
+        if [[ "${MOD_CURRENT_VERSION}" != "${MOD_REMOTE_VERSION}" ]] ; then 
+            colo "GREEN" "-n" "workshop-${MOD_ID}/"
+            colo "CYAN" "-n" "${MOD_NAME}   "
+            colo "BLUE" "${MOD_CURRENT_VERSION}" "-->" "${MOD_REMOTE_VERSION}"
+            if [[ -n "${MOD_REMOTE_VERSION}" ]] ; then 
+                MOD_LIST_UPDATE_ID=("${MOD_LIST_UPDATE_ID[@]}" "${MOD_ID}")
+            else
+                erro "This mod seem missing version tag, ignore, you can update by 'wax -Mi'"
+            fi
+            echo 
+
+        fi
+    done
+
+    if [[ -z "${MOD_LIST_UPDATE_ID[@]}" ]] ; then
+        colo "GREEN" "Nothing to be updated"
+        return 0
+    fi
+        
+    colo "GREEN" "Proceed with updating?(Y/n)"
+    read answer 
+
+    if [[ -n "${answer}" && "${answer}" != "Y" && "${answer}" != "y" ]] ; then
+        return 1
+    fi
+
+    download_mod_files "${MOD_LIST_UPDATE_ID[@]}"
+
+    for element in ${MOD_LIST_UPDATE_ID[@]} ; do 
+        if [[ ! -d "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${element}/" ]] ; then 
+            erro "download ${element} fail"
+            continue
+        fi
+        colo "GREEN" "install workshop-${element}"
+
+        rm -rf "${DST_CORE_DIR}/mods/workshop-${element}" || erro "Cannot delete old file workshop-${element}"
+
+        cp -r "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${element}/" "${DST_CORE_DIR}/mods/workshop-${element}" || \
+        erro "install workshop-${element} fail"
+
+        rm -rf "${STEAMCMD}/linux32/steamapps/content/app_322330/item_${element}/"
+    done
+}
 
 function search_mod() {
     KEYWORD="$1"
@@ -524,7 +611,6 @@ function search_mod() {
   Globals:
     MOD_ID : mod id number
     LINE_NUM : get mod relevant line number in order to delete from file
-    SED_DEL_PATTERN= : script to delete mod line at once
   Arguments:
     $1: mod id
   Return:
@@ -536,43 +622,23 @@ function uninstall_mod() {
     MOD_ID="$1"
 # check if mod id pure number
     if [[ -z "$(echo "${MOD_ID}" | grep -o -P "^\d+$")" ]] ; then
-        echo "invalid mod id"
+        erro "invalid mod id"
         exit 1
     fi
 # uninstall from local file
     if [[ -d "${DST_CORE_DIR}/mods/workshop-${MOD_ID}" ]] ; then
         echo "Remove from local file"
         echo "Mod Path : ${DST_CORE_DIR}/mods/workshop-${MOD_ID}"
-        echo "Warning: Do you really want to remove this mod? (y/N)"
+        colo "RED" "Warning: Do you really want to remove this mod? (y/N)"
+        colo "RED" "Warning: Mod will only load on using, Please uninstall mod only if lacking disk space"
         read answer
         if [[ "${answer}" == "y" || "${answer}" == "Y" ]] ; then
             rm -rf "${DST_CORE_DIR}/mods/workshop-${MOD_ID}"
             colo "GREEN" "remove success"
             return 0
         fi
-#         uninstall remote mod
     else
-        echo "Remove mod from remote"
-
-# prase mod line number in file to be delete
-# example 13 14 15
-        LINE_NUM=($(grep --no-group-separator -B 2 -P -n -v "^\s*$|--" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua" \
-            | grep -P -B 2 "ServerModSetup\(\"${MOD_ID}\"\)" \
-            | grep -P -o "^\d+"))
-        SED_DEL_PATTERN=""
-
-        if [[ -z "${!LINE_NUM[@]}" ]] ; then
-            erro "Can't find the mod"
-            return 1
-        fi
-
-# example "13d;14d;15d;"
-        for element in ${LINE_NUM[@]} ; do
-            SED_DEL_PATTERN="${SED_DEL_PATTERN}${element}d;"
-        done
-        sed -i "${SED_DEL_PATTERN}" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
-        colo "Remove success"
-        return 0
+        erro "Cannot find mod file, maybe not installed"
     fi
 }
 
@@ -589,22 +655,14 @@ function uninstall_mod() {
 
 function install_depency() {
     if [[ -n $(command -v "apt") ]] ; then
-        sudo dpkg --add-architecture i386
         sudo apt update
-        sudo apt install lib32gcc1
-        sudo apt install libstdc++6:i386
         sudo apt install libcurl3-gnutls
-        sudo apt install libcurl3-gnutls:i386
     elif [[ -n $(command -v "yum") ]] ; then
-        sudo yum install glibc.i686
-        sudo yum install libstdc++.i686
 #         CentOS doesn't provide libcurl-gnutls.so.4, this is a temporary method
         sudo yum install libcurl
         sudo cp /usr/lib64/libcurl.so.4 /usr/lib64/libcurl-gnutls.so.4
     elif [[ -n $(command -v "pacman") ]] ; then
         sudo pacman -Sy
-        sudo pacman -S lib32-glibc
-        sudo pacman -S lib32-libcurl-gnutls
         sudo pacman -S libcurl-gnutls
     else
         erro "unsupport distribution"
@@ -623,25 +681,55 @@ function install_depency() {
 "
 
 function update() {
-    if [[ ! -x "${STEAMCMD}" ]] ; then 
-        erro "steamcmd.sh not found or not executable" ; 
+    if [[ ! -f "${STEAMCMD}/steamcmd.sh" ]] ; then 
+        colo "CYAN" "steamcmd.sh not found or not executable, install steamcmd at ${STEAMCMD}?(Y/n)" 
+        if ! yes ; then
+            colo "GREEN" "Abort"
+            return 1
+        fi
         colo "CYAN" "install steamcmd"
-        echo "Press Enter to continue installing.."
-        read 
+        install_steamcmd
     fi
-    exit 
-    if [[ ! -x "${STEAMCMD}/linux32/steamcmd" ]] ; then erro "steamcmd core not found or not executable" ; fi
-    if [[ ! -d "${DST_SAVE_DIR}/DoNotStarveTogether/" ]] ; then erro ".klei save directory not found" ; fi
-    if [[ ! -d "${STEAM_DIR}/steamapps" ]] ; then erro "Steam directory not found " ; fi
-    if [[ ! -x "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then
-        erro "server core not found or not executable"
+    if [[ ! -f "${STEAMCMD}/linux32/steamcmd" ]] ; then 
+        erro "steamcmd core not found or not executable, check ${STEAMCMD}/linux32/steamcmd" 
+        return 1
     fi
-    "${STEAMCMD}/steamcmd.sh" +login anonymous +app_update 343050 validate +quit
+
+    if [[ ! -f "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then 
+        colo "CYAN" "server core not found or not executable, install server depency(need sudo privilege)?(Y/n)"
+        if yes ; then
+            colo "CYAN" "install depency"
+            install_depency
+        fi
+    fi
+
+    colo "CYAN" "update Don't Starve Together DediCated Server"
+    cd "${STEAMCMD}"
+    "steamcmd.sh" +force_install_dir "${DST_CORE_DIR}" +login anonymous +app_update 343050 validate +quit
+
 }
 
 function install_steamcmd() {
-    cd "${STEAMCMD}"
-    curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf -
+    if [[ -n $(command -v "apt") ]] ; then
+        sudo dpkg --add-architecture i386
+        sudo apt update
+        sudo apt install lib32gcc1
+        sudo apt install libstdc++6:i386
+    elif [[ -n $(command -v "yum") ]] ; then
+        sudo yum install glibc.i686
+        sudo yum install libstdc++.i686
+    elif [[ -n $(command -v "pacman") ]] ; then
+        sudo pacman -Sy
+        sudo pacman -S lib32-glibc
+    else
+        erro "unsupport distribution"
+        return 1
+    fi
+
+    mkdir -p "${STEAMCMD}"
+
+    (cd "${STEAMCMD}"
+    curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf -)
 }
 
 # function trap_ctrlc() {
@@ -706,6 +794,16 @@ function colo() {
     echo -ne "\e[0m"
 }
 
+function yes() {
+    read answer
+
+    if [[ -n "${answer}" && "${answer}" != "Y" && "${answer}" != "y" ]] ; then
+        return 1
+    else
+        return 0
+    fi
+}
+
 function list_cluster() {
     ls -F "${DST_SAVE_DIR}/DoNotStarveTogether" | grep "/$"
 }
@@ -745,6 +843,7 @@ function backup() {
     fi
 
     tar -zcvf "backup_cluster/${CLUSTER_NAME}-${DATE}.tar.gz" "${CLUSTER_NAME}"
+    colo "GREEN" "backup ${CLUSTER_NAME} in directory" "${DST_SAVE_DIR}/DoNotStarveTogether/backup_cluster"
 }
 
 main "$@"

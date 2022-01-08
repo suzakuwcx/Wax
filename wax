@@ -1,0 +1,750 @@
+#!/bin/bash
+#
+# An convenient tool to manage Don't Starve Together DediCated Server
+
+export SteamAppId=322330
+export SteamGameId=322330
+
+: "
+  Globals config variable,you need to edit only if you have a running server
+
+  STEAMCMD : steamcmd.sh location
+    part content : steamcmd.sh linux32/
+  DST_SAVE_DIR : location of cluster
+    content : DoNotStarveTogether/ Agreements/
+  STEAM_DIR : location of Steam root directory
+    part content : steamapps/ config/ userdata/ ...
+  DST_CORE_DIR : core file of Don't Starve Together DediCated server
+    part contain : mods/ bin/ data/ ...
+
+  After finishing editing, use 'wax -c' to check
+"
+
+# default:
+#   STEAMCMD="${PWD}"
+#   DST_SAVE_DIR="${HOME}/.klei"
+#   STEAM_DIR="${HOME}/.local/share/Steam"
+#   DST_CORE_DIR="${STEAM_DIR}/steamapps/common/Don't Starve Together Dedicated Server"
+
+STEAMCMD="${PWD}"
+DST_SAVE_DIR="${HOME}/.klei"
+STEAM_DIR="${HOME}/.local/share/Steam"
+DST_CORE_DIR="${STEAM_DIR}/steamapps/common/Don't Starve Together Dedicated Server"
+
+# Server launching arguments,'-shard option has built in script'
+# See https://support.klei.com/hc/en-us/articles/360029556192-Dedicated-Server-Command-Line-Options-Guide
+LAUNCH_ARGS=(
+#     "-persistent_storage_root" <path>
+#     "-conf_dir" <path>
+      "-cluster" "Cluster_8"
+#     "-offline"
+#     "-disabledatacollection"
+#     "-bind_ip"  <bind_ip>
+#     "-port" <port_number>
+#     "-players" <max_players>
+#     "-steam_master_server_port" <port_number>
+#     "-steam_authentication_port" <port_number>
+#     "-backup_logs"
+#     "-tick" <tick_rate>
+)
+
+function main() {
+    check_dependency 1>/dev/null
+    trap trap_ctrlc 2
+    parse_options "$@"
+
+# to ensure parameters is correct, parse result is used in setting variable
+    if [[ ${PRINT_HELP} -eq 1 ]] ; then usage ; fi
+    if [[ ${CHECK_CONFIG} -eq 1 ]] ; then check_config ; fi
+    if [[ ${PRINT_SERVER_HELP} -eq 1 ]] ; then usage_server ; fi
+    if [[ ${START_SERVER} -eq 1 ]] ; then start_both_server ; fi
+    if [[ ${CLOSE_SERVER} -eq 1 ]] ; then close_server ; fi
+    if [[ ${UPDATE_SERVER} -eq 1 ]] ; then update ; fi
+    if [[ ${ROLLBACK_SERVER} -eq 1 ]] ; then rollback_server "${ROLLBACK_DAYS}" ; fi
+    if [[ ${PRINT_MOD_HELP} -eq 1 ]] ; then usage_mod ; fi
+    if [[ ${INSTAll_MOD} -eq 1 ]] ; then install_mod ${INSTAll_MOD_ARG} ; fi
+    if [[ ${LIST_MOD} -eq 1 ]] ; then get_installed_mod ; fi
+    if [[ ${REMOVE_MOD} -eq 1 ]] ; then uninstall_mod "${UNINSTAll_MOD_ID}" ; fi
+    if [[ ${SEARCH_MOD} -eq 1 ]] ; then search_mod "${SEARCH_MOD_KEYWORD}" ; fi
+    if [[ ${PRINT_CLUSTER_HELP} -eq 1 ]] ; then usage_cluster ; fi
+    if [[ ${LIST_CLUSTER} -eq 1 ]] ; then list_cluster ; fi
+    if [[ ${BACKUP_CLUSTER} -eq 1 ]] ; then backup ; fi
+}
+
+: "
+    check script dependency
+"
+function check_dependency() {
+    command -v screen || (erro "This script need screen but not be installed" && exit)
+    command -v tar || (erro "This script need tar but not be installed" && exit)
+    command -v grep || (erro "This script need grep but not be installed" && exit)
+    command -v sed || (erro "This script need sed but not be installed" && exit)
+}
+
+function check_config() {
+    echo "Checking config"
+    if [[ ! -x "${STEAMCMD}/steamcmd.sh" ]] ; then erro "steamcmd.sh not found or not executable" ; fi
+    if [[ ! -x "${STEAMCMD}/linux32/steamcmd" ]] ; then erro "steamcmd core not found or not executable" ; fi
+    if [[ ! -d "${DST_SAVE_DIR}/DoNotStarveTogether/" ]] ; then erro ".klei save directory not found" ; fi
+    if [[ ! -d "${STEAM_DIR}/steamapps" ]] ; then erro "Steam directory not found " ; fi
+    if [[ ! -x "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then
+        erro "server core not found or not executable"
+    fi
+    echo "Your Server launching arguments :"
+    echo "${LAUNCH_ARGS[@]}"
+}
+
+function parse_options() {
+    if [[ -n "$1" ]] ; then
+        case "$1" in
+            -h)
+                PRINT_HELP=1
+                ;;
+            --help)
+                PRINT_HELP=1
+                ;;
+            -c)
+                CHECK_CONFIG=1
+                ;;
+# Server
+            -Sh)
+                PRINT_SERVER_HELP=1
+                ;;
+            -Ss)
+                START_SERVER=1
+                ;;
+            -Sc)
+                CLOSE_SERVER=1
+                ;;
+            -Su)
+                UPDATE_SERVER=1
+                ;;
+            -Sr)
+                shift
+                ROLLBACK_SERVER=1
+                ROLLBACK_DAYS="$1"
+                ;;
+# Mod
+            -Mh)
+                PRINT_MOD_HELP=1
+                ;;
+            -Mi)
+                shift
+                INSTAll_MOD=1
+                INSTAll_MOD_ARG="$1"
+                ;;
+            -Ml)
+                LIST_MOD=1
+                ;;
+            -Mr)
+                shift
+                REMOVE_MOD=1
+                UNINSTAll_MOD_ID="$1"
+                ;;
+            -Ms)
+                shift
+                SEARCH_MOD=1
+                SEARCH_MOD_KEYWORD="$1"
+                ;;
+# Cluster
+            -Ch)
+                PRINT_CLUSTER_HELP=1
+                ;;
+            -Cl)
+                LIST_CLUSTER=1
+                ;;
+            -Cb)
+                BACKUP_CLUSTER=1
+                ;;
+            *)
+                erro "unknown param $1"
+                usage
+                exit 1;
+                ;;
+        esac
+
+        shift
+        if [[ $# -ne 0 ]] ; then
+            erro "Too many parameters"
+            exit 1
+        fi
+    fi
+}
+
+: "
+  Print help
+"
+function usage() {
+cat << EOF
+    Usage: wax <operation> [...]
+    operations:
+      -h, --help                help   : print this help
+      -c                        check  : check Globals config
+      -S<operation>             Server : use -Sh to get help
+      -M<operation>             Mod    : use -Mh to get help
+      -C<operation>             Cluster: use -Ch to get help
+EOF
+}
+
+function usage_server() {
+cat << EOF
+    Usage: wax <operation> [arg..]
+    operations:
+      -Sh                       print Server help
+      -Ss                       start Server,please edit launching arguments in shell script
+      -Sc                       close Server
+      -Su                       update or install Server
+      -Sr <num>                 rollback <num> day in Server
+EOF
+}
+
+function usage_mod() {
+cat << EOF
+    Usage: wax <operation> [arg..]
+    operations:
+        -Mh                    print mod help
+        -Mi <mod_id>           install mod from Steam
+        -Mi <file>             install mod from local file
+        -Ml                    list installed mods
+        -Ms <keyword>          search mod from Steam
+        -Mr <mod_id>           remove installed mod
+EOF
+}
+
+function usage_cluster() {
+cat << EOF
+    Usage: wax <operation> [arg..]
+    operations:
+        -Ch                    print cluster help
+        -Cl                    list cluster
+        -Cb                    backup cluster appended on '-cluster' option
+EOF
+}
+
+: "
+  check if server still running
+  Globals:
+    None
+  Arguments:
+    $1: shared name, Master or Caves
+  Return:
+    0 : server is running
+    1 : server is close
+"
+
+function server_exist() {
+    SHARD="$1"
+    if [[ -n "$(screen -ls | grep "${SHARD}")" ]] ; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+: "
+  Send command to Master or Caves server
+  Globals:
+    None
+  Arguments:
+    $1: shard name, Master or Caves
+    $2: Command to be send
+  Return:
+    0: if success
+    1: if failed
+"
+
+function send_command() {
+    SHARD="$1"
+    COMMAND="$2"
+
+    if ! server_exist "${SHARD}" ; then
+        erro "Server ${SHARD} doesn't exist"
+        return 1
+    fi
+
+    screen -S ${SHARD} -p 0 -X stuff "${COMMAND}"
+    screen -S ${SHARD} -p 0 -X stuff $'\015' # $'\015' mean Enter
+
+    return 0
+}
+
+: "
+  Start Master or Caves
+  Globals:
+    START_SUCCESS : keyword of server start success
+    START_FAIL : keyword of server start failed
+    SHARD : choose Master or Caves
+  Arguments:
+    $1: shared name, Master or Caves
+  Return:
+    None
+  File:
+    /tmp/wax/Master.log
+    /tmp/wax/Caves.log
+  Screen session:
+    Master
+    Caves
+"
+
+function start_server() {
+#     !! has special meaning in bash,so separated by "!""!"
+    START_SUCCESS="Sim paused"
+    START_FAIL="!""!""!""!"" Your Server Will Not Start ""!""!""!""!"
+
+    SHARD="$1"
+
+#     check if server started
+    if server_exist "${SHARD}"; then
+        erro "${SHARD} has started, use '-Sc' options to close"
+        return 1
+    fi
+
+#     check if log directory exist,create it if not
+    if [[ ! -d /tmp/wax ]] ; then
+        mkdir /tmp/wax
+    fi
+#     clean lastest log or create log file if doesn't exist
+    echo "" > /tmp/wax/${SHARD}.log
+
+#     start server and put it into screen background
+    (
+      cd "${DST_CORE_DIR}"/bin64 && \
+      screen -dmS ${SHARD} -L -Logfile "/tmp/wax/${SHARD}.log" \
+      ./dontstarve_dedicated_server_nullrenderer_x64 \
+      -shard "${SHARD}" "${LAUNCH_ARGS[@]}"
+    )
+
+#     get server output by tail screen log and show it to user
+#     if keyword appear,stop tail and show result
+    (
+        while read -r output ; do
+            echo -e "${output}"
+            if [[ "$(echo -e ${output} | grep -o "${START_SUCCESS}")" == "${START_SUCCESS}" ]] ; then
+                colo "GREEN" "========================Success==============================="
+                colo "GREEN" "Terminal has been putting into background"
+                colo "GREEN" "Start ${SHARD} success"
+                colo "GREEN" "You can use 'wax -Sc' to shutdown server"
+                colo "GREEN" "========================Success==============================="
+                echo
+                return 0
+            elif [[ "$(echo -e ${output} | grep -o "${START_FAIL}")" == "${START_FAIL}" ]] ; then
+                for i in 1 2 3 4 5 6 7 8 9 10 11 12 ; do        # print 12 line when fail keyword appear
+                    read -r -t 5 output                         # -t option is to prevent blocking
+                    echo -e "${output}"
+                done
+                colo "RED" "========================Failed================================"
+                colo "RED" "Terminal has been putting into background"
+                colo "RED" "Start ${SHARD} failed"
+                colo "RED" "Please use 'wax -Sc' to shutdown server"
+                colo "RED" "========================Failed==================================="
+                echo
+                return 1
+            fi
+        done
+    )< <(tail -n 0 -f "/tmp/wax/${SHARD}.log")
+}
+
+function start_both_server() {
+    check_config
+    echo "Starting Master server"
+    start_server "Master"
+    echo "Starting Caves server"
+# to show the result of Master
+    sleep 5
+    start_server "Caves"
+}
+
+function close_server() {
+    if ! send_command "Master" "c_shutdown()" ; then
+        erro "Cannot close Master server"
+    fi
+    if ! send_command "Caves" "c_shutdown()" ; then
+        erro "Cannot close Caves server"
+    fi
+}
+
+function rollback_server() {
+    DAY="$1"
+    if send_command "Master" "c_rollback(${DAY})" ; then
+        erro "Rollback Master server fail"
+    fi
+    if send_command "caves" "c_shutdown(${DAY})" ; then
+        erro "Rollback close caves server"
+    fi
+}
+
+function get_installed_mod() {
+    colo "GREEN" "=================================Local mod===================================="
+    ls "${DST_CORE_DIR}/mods" | grep "workshop"
+    colo "GREEN" "================================Remote mod===================================="
+    colo "GREEN" "=======================dedicated_server_mods_setup.lua========================"
+#     "^\s+$|--" with -v command is to filter empty line and notes begin with '--'
+#     -B 1 option is to show mod describtion
+    grep -B 1 -Pv "^\s*$|--" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+}
+
+: "
+  install mod from local file or Steam,mod file should be a directory
+  Globals:
+    MOD_FILE_PATH : mod local file path
+    MOD_NAME : mod file name (when install from local file)
+    MOD_NAME : mod name infomation (when install from Steam)
+    MOD_ID : mod id number
+    PREFIX : mod infomation format in web page
+    SUFFIX : mod infomation format in web page
+    ERROR_TYPE : error format in web page
+  Arguments:
+    $1: mod file path or a mod id number to search from Steam
+  Return:
+    0: if success
+    1: if failed
+  File:
+    ${DST_CORE_DIR}/mods/workshop-${mod_id}
+    ${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua
+"
+
+function install_mod() {
+# check if the param is a mod directory
+    if [[ -d "$1" ]] ; then
+        echo "install from local file"
+        MOD_FILE_PATH="$1"
+        MOD_NAME="$(basename "$MOD_FILE_PATH")"
+# check if mod name is pure number,foe example 1378549454
+        if [[ -n "$(echo "${MOD_NAME}" | grep -o -P "^\d+$")" ]] ; then
+# check if mod exist
+            if [[ -d "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}" ]] ; then
+                erro "this mod is exist, failed"
+                return 1
+            fi
+# add 'workshop-' prefix when installed
+            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"
+# check if mod name is valid,for example workshop-1378549454
+        elif [[ -n "$(echo "${MOD_NAME}" | grep -o -P "workshop-\d+")"  ]] ; then
+# check if mod exist
+            if [[ -d "${DST_CORE_DIR}/mods/${MOD_NAME}" ]] ; then
+                erro "this mod is exist, failed"
+                return 1
+            fi
+            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/${MOD_NAME}"
+        else
+            erro "the mod name is invalid"
+            return 1
+        fi
+        echo "install success"
+        return 0
+    fi
+
+# the param is not a directory, try to install from Steam
+# check if the param is a pure number
+    if [[ -z "$(echo "$1" | grep -o -P "^\d+$")" ]] ; then
+        erro "the mod id or mod name is invalid"
+        return 1
+    fi
+
+    colo "GREEN" "install from steam"
+
+# web page example: <title>Steam Workshop::[API] Gem Core(Now with World Seeds!)</title>
+    PREFIX="		<title>Steam Workshop::"
+    SUFFIX="</title>"$'\015'
+    ERROR_TYPE="		<title>Steam Community :: Error</title>"$'\015'
+
+    MOD_ID="$1"
+    MOD_NAME=""
+
+    MOD_NAME=$(curl -s "https://steamcommunity.com/sharedfiles/filedetails/?id=${MOD_ID}" \
+                    | grep "<title>")
+    if [[ ${MOD_NAME} == ${ERROR_TYPE} ]] ; then
+        erro "cannot find the mod"
+        return 1
+    fi
+# get mod name from web page
+    MOD_NAME=${MOD_NAME#${PREFIX}}
+    MOD_NAME=${MOD_NAME%${SUFFIX}}
+# write mod setting in dedicated_server_mods_setup.lua,example:
+# -- Smashup
+# ServerModSetup("2701285237")
+    echo "" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+    echo "-- ${MOD_NAME}" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+    echo "ServerModSetup(\"${MOD_ID}\")" >> "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+    colo "GREEN" "install success"
+    return 0
+}
+
+: "
+  search mod from Steam
+  Globals:
+    KEYWORD : search keyword
+    MOD_NAME : mod name infomation from Steam
+    MOD_ID : mod id number
+    AUTHOR : mod author infomation from Steam
+    PATTERN_NAME : mod infomation format in web page
+    PATTERN_AUTHOR : mod infomation format in web page
+    RAW : web page raw
+    MOD_LIST_NAME : message that include mod id and name, this is an array variable
+    MOD_LIST_AUTHOR : message that include mod author, this is an array variable
+    ID : mod id infomation
+    TITLE : mod name infomation
+    AUTHOR : mod author name
+  Arguments:
+    $1: search keyword
+  Return:
+    None
+"
+
+function search_mod() {
+    KEYWORD="$1"
+    TITLE=""
+    AUTHOR=""
+    MOD_ID=""
+    PATTERN_NAME="workshopItemTitle ellipsis"
+    PATTERN_AUTHOR="workshopItemAuthorName ellipsis"
+
+    RAW=$(curl -s "https://steamcommunity.com/workshop/browse/?appid=322330&searchtext=${KEYWORD}&childpublishedfileid=0&browsesort=textsearch&section=home")
+
+# message example
+# <a href="https://steamcommunity.com/sharedfiles/filedetails/?id=2701285237&amp;searchtext="><div class="workshopItemTitle ellipsis">Smashup</div></a>
+# <div class="workshopItemAuthorName ellipsis">by&nbsp;<a href="https://steamcommunity.com/profiles/76561198040829603/myworkshopfiles/?appid=322330">Pickleplayer</a></div>
+    IFS=$'\015' MOD_LIST_NAME=($(echo "${RAW}" | grep "${PATTERN_NAME}"))
+    IFS=$'\015' MOD_LIST_AUTHOR=($(echo "${RAW}" | grep "${PATTERN_AUTHOR}"))
+
+    echo
+
+    for i in ${!MOD_LIST_NAME[@]} ; do
+        ID=$(echo "${MOD_LIST_NAME[$i]}" | grep -o -P "(?<=sharedfiles/filedetails/\?id=)[^&]+")
+        TITLE=$(echo "${MOD_LIST_NAME[$i]}" | grep -o -P "(?<=workshopItemTitle ellipsis\">)[^<]+")
+        AUTHOR=$(echo "${MOD_LIST_AUTHOR[$i]}" | grep -o -P "(?<=/myworkshopfiles/\?appid=322330\">)[^<]+")
+        colo "CYAN" "-n" "${TITLE}/" ; echo "${AUTHOR}"
+        colo "BLUE" "ID:${ID}"
+        echo
+    done
+}
+
+: "
+  uninstall mod
+  Globals:
+    MOD_ID : mod id number
+    LINE_NUM : get mod relevant line number in order to delete from file
+    SED_DEL_PATTERN= : script to delete mod line at once
+  Arguments:
+    $1: mod id
+  Return:
+    0 : if success
+    1 : if fail
+"
+
+function uninstall_mod() {
+    MOD_ID="$1"
+# check if mod id pure number
+    if [[ -z "$(echo "${MOD_ID}" | grep -o -P "^\d+$")" ]] ; then
+        echo "invalid mod id"
+        exit 1
+    fi
+# uninstall from local file
+    if [[ -d "${DST_CORE_DIR}/mods/workshop-${MOD_ID}" ]] ; then
+        echo "Remove from local file"
+        echo "Mod Path : ${DST_CORE_DIR}/mods/workshop-${MOD_ID}"
+        echo "Warning: Do you really want to remove this mod? (y/N)"
+        read answer
+        if [[ "${answer}" == "y" || "${answer}" == "Y" ]] ; then
+            rm -rf "${DST_CORE_DIR}/mods/workshop-${MOD_ID}"
+            colo "GREEN" "remove success"
+            return 0
+        fi
+#         uninstall remote mod
+    else
+        echo "Remove mod from remote"
+
+# prase mod line number in file to be delete
+# example 13 14 15
+        LINE_NUM=($(grep --no-group-separator -B 2 -P -n -v "^\s*$|--" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua" \
+            | grep -P -B 2 "ServerModSetup\(\"${MOD_ID}\"\)" \
+            | grep -P -o "^\d+"))
+        SED_DEL_PATTERN=""
+
+        if [[ -z "${!LINE_NUM[@]}" ]] ; then
+            erro "Can't find the mod"
+            return 1
+        fi
+
+# example "13d;14d;15d;"
+        for element in ${LINE_NUM[@]} ; do
+            SED_DEL_PATTERN="${SED_DEL_PATTERN}${element}d;"
+        done
+        sed -i "${SED_DEL_PATTERN}" "${DST_CORE_DIR}/mods/dedicated_server_mods_setup.lua"
+        colo "Remove success"
+        return 0
+    fi
+}
+
+: "
+  solve dependency problem
+  Globals:
+    None
+  Arguments:
+    None
+  Return:
+    0 : if success
+    1 : if fail
+"
+
+function install_depency() {
+    if [[ -n $(command -v "apt") ]] ; then
+        sudo dpkg --add-architecture i386
+        sudo apt update
+        sudo apt install lib32gcc1
+        sudo apt install libstdc++6:i386
+        sudo apt install libcurl3-gnutls
+        sudo apt install libcurl3-gnutls:i386
+    elif [[ -n $(command -v "yum") ]] ; then
+        sudo yum install glibc.i686
+        sudo yum install libstdc++.i686
+#         CentOS doesn't provide libcurl-gnutls.so.4, this is a temporary method
+        sudo yum install libcurl
+        sudo cp /usr/lib64/libcurl.so.4 /usr/lib64/libcurl-gnutls.so.4
+    elif [[ -n $(command -v "pacman") ]] ; then
+        sudo pacman -Sy
+        sudo pacman -S lib32-glibc
+        sudo pacman -S lib32-libcurl-gnutls
+        sudo pacman -S libcurl-gnutls
+    else
+        erro "unsupport distribution"
+        return 1
+    fi
+}
+
+: "
+  install or update server core
+  Globals:
+    None
+  Arguments:
+    None
+  Return:
+    None
+"
+
+function update() {
+    if [[ ! -x "${STEAMCMD}" ]] ; then 
+        erro "steamcmd.sh not found or not executable" ; 
+        colo "CYAN" "install steamcmd"
+        echo "Press Enter to continue installing.."
+        read 
+    fi
+    exit 
+    if [[ ! -x "${STEAMCMD}/linux32/steamcmd" ]] ; then erro "steamcmd core not found or not executable" ; fi
+    if [[ ! -d "${DST_SAVE_DIR}/DoNotStarveTogether/" ]] ; then erro ".klei save directory not found" ; fi
+    if [[ ! -d "${STEAM_DIR}/steamapps" ]] ; then erro "Steam directory not found " ; fi
+    if [[ ! -x "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then
+        erro "server core not found or not executable"
+    fi
+    "${STEAMCMD}/steamcmd.sh" +login anonymous +app_update 343050 validate +quit
+}
+
+function install_steamcmd() {
+    cd "${STEAMCMD}"
+    curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf -
+}
+
+# function trap_ctrlc() {
+# (
+#     echo
+#     echo "Signal receive"
+# cat << EOF
+#         solution
+# EOF
+# ) >> /dev/stderr
+# }
+
+
+: "
+  Send error message to stderr
+  Globals:
+    None
+  Arguments:
+    $@： messages to be send
+  Return:
+    None
+"
+
+function erro() {
+    colo "RED" "Error: " "$@" >> "/dev/stderr"
+}
+
+: "
+    $1 : colour
+    ${@:2} : arguments and text to be sent
+"
+function colo() {
+    COLOUR="$1"
+    ARGS=(-e)
+    RED="\e[1;31m"
+    GREEN="\e[1;32m"
+    BLUE="\e[1;34m"
+    CYAN="\e[1;36m"
+
+
+    case ${COLOUR} in
+        "RED")
+            COLOUR=${RED}
+            ;;
+        "GREEN")
+            COLOUR=${GREEN}
+            ;;
+        "BLUE")
+            COLOUR=${BLUE}
+            ;;
+        "CYAN")
+            COLOUR=${CYAN}
+            ;;
+    esac
+
+    while [[ "$2" == -* ]] ; do
+        ARGS=(${ARGS[@]} $2)
+        shift
+    done
+
+    echo ${ARGS[@]} "${COLOUR}${@:2}"
+    echo -ne "\e[0m"
+}
+
+function list_cluster() {
+    ls -F "${DST_SAVE_DIR}/DoNotStarveTogether" | grep "/$"
+}
+
+: "
+    backup your server cluster
+"
+
+function backup() {
+    CLUSTER_NAME=""
+    DATE=$(date "+%F-%R")
+
+    if server_exist "Master" || server_exist "Caves"; then
+        erro "Server is running, use 'wax -c' to shutdown"
+        return 1
+    fi
+
+    for i in ${!LAUNCH_ARGS[@]} ; do
+        if [[ "${LAUNCH_ARGS[$i]}" == "-cluster" ]] ; then
+            CLUSTER_NAME="${LAUNCH_ARGS[$[$i+1]]}"
+        fi
+    done
+
+    if [[ -z "${CLUSTER_NAME}" ]] ; then
+        erro "Missing Cluster name,check script '-cluster' option at LAUNCH_ARGS"
+        return 1
+    fi
+
+    cd "${DST_SAVE_DIR}/DoNotStarveTogether/"
+    if [[ ! -d ${CLUSTER_NAME} ]] ; then
+        erro "Missing cluster directory"
+        return 1
+    fi
+
+    if [[ ! -d "backup_cluster" ]] ; then
+        mkdir backup_cluster
+    fi
+
+    tar -zcvf "backup_cluster/${CLUSTER_NAME}-${DATE}.tar.gz" "${CLUSTER_NAME}"
+}
+
+main "$@"

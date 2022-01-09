@@ -2,6 +2,8 @@
 #
 # An convenient tool to manage Don't Starve Together DediCated Server
 
+# enable err output when ctrl+c 
+set -o functrace
 export SteamAppId=322330
 export SteamGameId=322330
 
@@ -45,10 +47,13 @@ LAUNCH_ARGS=(
 )
 
 function main() {
-    check_dependency 1>/dev/null
-    # trap trap_ctrlc 2
-    parse_options "$@"
+# enable err output when ctrl+c 
+    trap 'PREV_CMD=${THIS_COMMAND}; THIS_COMMAND=${BASH_COMMAND}' DEBUG
+    trap 'trap_ctrlc ${PREV_CMD}' SIGINT 
 
+    check_dependency 1>/dev/null
+
+    parse_options "$@"
 # to ensure parameters is correct, parse result is used in setting variable
     if [[ ${PRINT_HELP} -eq 1 ]] ; then usage ; exit ; fi
     if [[ ${CHECK_CONFIG} -eq 1 ]] ; then check_config ; exit ; fi
@@ -76,6 +81,7 @@ function check_dependency() {
     command -v screen || (erro "This script need screen but not be installed" && exit)
     command -v tar || (erro "This script need tar but not be installed" && exit)
     command -v grep || (erro "This script need grep but not be installed" && exit)
+    command -v sed || (erro "This script need sed but not be installed" && exit)
 }
 
 function check_config() {
@@ -300,9 +306,7 @@ function start_server() {
     fi
 
 #     check if log directory exist,create it if not
-    if [[ ! -d /tmp/wax ]] ; then
-        mkdir /tmp/wax
-    fi
+    mkdir -p /tmp/wax
 #     clean lastest log or create log file if doesn't exist
     echo "" > /tmp/wax/${SHARD}.log
 
@@ -350,7 +354,7 @@ function start_both_server() {
     start_server "Master"
     echo "Starting Caves server"
 # to show the result of Master
-    sleep 5
+    sleep 4
     start_server "Caves"
 }
 
@@ -365,11 +369,17 @@ function close_server() {
 
 function rollback_server() {
     DAY="$1"
-    if send_command "Master" "c_rollback(${DAY})" ; then
+
+    if [[ -z "$(echo "${DAY}" | grep -o -P "^\d+$")" ]] ; then
+        erro "invalid argument"
+        return 1
+    fi
+
+    if ! send_command "Master" "c_rollback(${DAY})" ; then
         erro "Rollback Master server fail"
     fi
-    if send_command "caves" "c_shutdown(${DAY})" ; then
-        erro "Rollback close caves server"
+    if ! send_command "Caves" "c_rollback(${DAY})" ; then
+        erro "Rollback Caves server fail"
     fi
 }
 
@@ -430,10 +440,10 @@ function install_mod() {
                     colo "GREEN" "Abort"
                 fi
 
-                rm -rf "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"
+                rm -rf "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"  || return 1
             fi
 # add 'workshop-' prefix when installed
-            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}"
+            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/workshop-${MOD_NAME}" || return 1
 # check if mod name is valid,for example workshop-1378549454
         elif [[ -n "$(echo "${MOD_NAME}" | grep -o -P "workshop-\d+")"  ]] ; then
 # check if mod exist
@@ -445,9 +455,9 @@ function install_mod() {
                     return 1
                 fi
 
-                rm -rf "${DST_CORE_DIR}/mods/${MOD_NAME}"
+                rm -rf "${DST_CORE_DIR}/mods/${MOD_NAME}" || return 1
             fi
-            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/${MOD_NAME}"
+            cp -r "${MOD_FILE_PATH}" "${DST_CORE_DIR}/mods/${MOD_NAME}" || return 1
         else
             erro "Mod name is invalid"
             return 1
@@ -653,7 +663,7 @@ function uninstall_mod() {
     1 : if fail
 "
 
-function install_depency() {
+function install_dependencies() {
     if [[ -n $(command -v "apt") ]] ; then
         sudo apt update
         sudo apt install libcurl3-gnutls
@@ -682,7 +692,7 @@ function install_depency() {
 
 function update() {
     if [[ ! -f "${STEAMCMD}/steamcmd.sh" ]] ; then 
-        colo "CYAN" "steamcmd.sh not found or not executable, install steamcmd at ${STEAMCMD}?(Y/n)" 
+        colo "CYAN" "steamcmd.sh not found, install steamcmd at ${STEAMCMD}?(Y/n)" 
         if ! yes ; then
             colo "GREEN" "Abort"
             return 1
@@ -690,26 +700,48 @@ function update() {
         colo "CYAN" "install steamcmd"
         install_steamcmd
     fi
+
     if [[ ! -f "${STEAMCMD}/linux32/steamcmd" ]] ; then 
         erro "steamcmd core not found or not executable, check ${STEAMCMD}/linux32/steamcmd" 
         return 1
     fi
 
-    if [[ ! -f "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]] ; then 
-        colo "CYAN" "server core not found or not executable, install server depency(need sudo privilege)?(Y/n)"
+    if [[ ! -f "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" ]]; then 
+        colo "CYAN" "server core not found, install server dependencies(need sudo privilege)?(Y/n)"
         if yes ; then
-            colo "CYAN" "install depency"
-            install_depency
+            colo "CYAN" "install dependency"
+            install_dependencies || return 1
+        fi
+    elif ! ldd "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" || \
+        [[ -n "$(ldd "${DST_CORE_DIR}/bin64/dontstarve_dedicated_server_nullrenderer_x64" | grep "not found")"  ]]
+    then
+        colo "CYAN" "missing server dependencies, install (need sudo privilege)?(Y/n)"
+        if yes ; then
+            install_dependencies || return 1
         fi
     fi
 
     colo "CYAN" "update Don't Starve Together DediCated Server"
     cd "${STEAMCMD}"
-    "steamcmd.sh" +force_install_dir "${DST_CORE_DIR}" +login anonymous +app_update 343050 validate +quit
+    "./steamcmd.sh" +force_install_dir "${DST_CORE_DIR}" +login anonymous +app_update 343050 validate +quit
 
 }
 
 function install_steamcmd() {
+    mkdir -p "${STEAMCMD}"
+
+    (cd "${STEAMCMD}"
+    curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf -)
+
+    if ! ldd linux32/steamcmd ; then
+        colo "GREEN" "It seems that missing steamcmd dependencies, install(need sudo privilege)?(Y/n)"
+        if yes ; then
+            install_steamcmd_dependencies || return 1
+        fi
+    fi
+}
+
+function install_steamcmd_dependencies() {
     if [[ -n $(command -v "apt") ]] ; then
         sudo dpkg --add-architecture i386
         sudo apt update
@@ -719,29 +751,20 @@ function install_steamcmd() {
         sudo yum install glibc.i686
         sudo yum install libstdc++.i686
     elif [[ -n $(command -v "pacman") ]] ; then
+        sudo sed -i "/\[multilib\]/,/Include/"'s/^#//' /etc/pacman.conf || return 1
+        colo "GREEN" "File change: /etc/pacman.conf"
+        colo "GREEN" "#[multilib]"
+        colo "GREEN" "#Include = /etc/pacman.d/mirrorlist"
+        colo "BLUE" "-->"
+        colo "CYAN" "[multilib]"
+        colo "CYAN" "Include = /etc/pacman.d/mirrorlist"
         sudo pacman -Sy
         sudo pacman -S lib32-glibc
     else
         erro "unsupport distribution"
         return 1
     fi
-
-    mkdir -p "${STEAMCMD}"
-
-    (cd "${STEAMCMD}"
-    curl -sqL "https://steamcdn-a.akamaihd.net/client/installer/steamcmd_linux.tar.gz" | tar zxvf -)
 }
-
-# function trap_ctrlc() {
-# (
-#     echo
-#     echo "Signal receive"
-# cat << EOF
-#         solution
-# EOF
-# ) >> /dev/stderr
-# }
-
 
 : "
   Send error message to stderr
@@ -828,7 +851,7 @@ function backup() {
     done
 
     if [[ -z "${CLUSTER_NAME}" ]] ; then
-        erro "Missing Cluster name,check script '-cluster' option at LAUNCH_ARGS"
+        erro "Missing Cluster name,check '-cluster' option at LAUNCH_ARGS in script"
         return 1
     fi
 
@@ -838,12 +861,20 @@ function backup() {
         return 1
     fi
 
-    if [[ ! -d "backup_cluster" ]] ; then
-        mkdir backup_cluster
-    fi
+    mkdir -p backup_cluster
 
     tar -zcvf "backup_cluster/${CLUSTER_NAME}-${DATE}.tar.gz" "${CLUSTER_NAME}"
     colo "GREEN" "backup ${CLUSTER_NAME} in directory" "${DST_SAVE_DIR}/DoNotStarveTogether/backup_cluster"
+}
+
+function trap_ctrlc() {
+(
+    echo 
+    echo "===========================Signal receive============================="
+    echo "last executing command is :"
+    echo "$@"
+) >> /dev/stderr
+    exit
 }
 
 main "$@"
